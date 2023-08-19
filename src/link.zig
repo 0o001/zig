@@ -871,6 +871,13 @@ pub const File = struct {
         }
     }
 
+    pub fn miscErrors(base: *File) []const ErrorMsg {
+        switch (base.tag) {
+            .macho => return @fieldParentPtr(MachO, "base", base).misc_errors.items,
+            else => return &.{},
+        }
+    }
+
     pub const UpdateDeclExportsError = error{
         OutOfMemory,
         AnalysisFail,
@@ -1132,6 +1139,19 @@ pub const File = struct {
     pub const ErrorFlags = struct {
         no_entry_point_found: bool = false,
         missing_libc: bool = false,
+    };
+
+    pub const ErrorMsg = struct {
+        msg: []const u8,
+        notes: []ErrorMsg = &.{},
+
+        pub fn deinit(self: *ErrorMsg, gpa: Allocator) void {
+            for (self.notes) |*note| {
+                note.deinit(gpa);
+            }
+            gpa.free(self.notes);
+            gpa.free(self.msg);
+        }
     };
 
     pub const LazySymbol = struct {

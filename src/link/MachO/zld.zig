@@ -33,6 +33,7 @@ const LibStub = @import("../tapi.zig").LibStub;
 const Object = @import("Object.zig");
 const StringTable = @import("../strtab.zig").StringTable;
 const SymbolWithLoc = MachO.SymbolWithLoc;
+const SymbolResolver = MachO.SymbolResolver;
 const Trie = @import("Trie.zig");
 const UnwindInfo = @import("UnwindInfo.zig");
 
@@ -788,7 +789,6 @@ pub const Zld = struct {
             const global_index = resolver.unresolved.keys()[next_sym];
             const global = self.globals.items[global_index];
             const sym = self.getSymbolPtr(global);
-            const sym_name = self.getSymbolName(global);
 
             if (sym.discarded()) {
                 sym.* = .{
@@ -809,11 +809,6 @@ pub const Zld = struct {
                 sym.n_desc = n_desc;
                 _ = resolver.unresolved.swapRemove(global_index);
                 continue;
-            }
-
-            log.err("undefined reference to symbol '{s}'", .{sym_name});
-            if (global.getFile()) |file| {
-                log.err("  first referenced in '{s}'", .{self.objects.items[file].name});
             }
 
             next_sym += 1;
@@ -3022,12 +3017,6 @@ const IndirectPointer = struct {
     }
 };
 
-pub const SymbolResolver = struct {
-    arena: Allocator,
-    table: std.StringHashMap(u32),
-    unresolved: std.AutoArrayHashMap(u32, void),
-};
-
 pub fn linkWithZld(macho_file: *MachO, comp: *Compilation, prog_node: *std.Progress.Node) link.File.FlushError!void {
     const tracy = trace(@src());
     defer tracy.end();
@@ -3450,9 +3439,8 @@ pub fn linkWithZld(macho_file: *MachO, comp: *Compilation, prog_node: *std.Progr
         };
         try zld.resolveSymbols(&resolver);
 
-        if (resolver.unresolved.count() > 0) {
-            return error.UndefinedSymbolReference;
-        }
+        try macho_file.reportUndefined(&zld, &resolver);
+
         if (lib_not_found) {
             return error.LibraryNotFound;
         }
